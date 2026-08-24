@@ -1,32 +1,42 @@
 # 🤖 Multiagentes
 
-Sistema multiagente construído com [LangGraph](https://github.com/langchain-ai/langgraph) e [LangChain](https://github.com/langchain-ai/langchain), no qual três agentes especializados colaboram em sequência para responder a uma pergunta do usuário: um **pesquisador**, um **analista** e um **redator**.
+Sistema multiagente construído com [LangGraph](https://github.com/langchain-ai/langgraph) e [LangChain](https://github.com/langchain-ai/langchain), no qual quatro agentes especializados colaboram para responder a uma pergunta do usuário: um **pesquisador**, um **analista**, um **agente de decisão** e um **redator**.
 
 ## ⚙️ Como funciona
 
-O fluxo é modelado como um grafo de estados (`StateGraph`), em que cada nó representa um agente e o resultado de um alimenta o próximo:
+O fluxo é modelado como um grafo de estados (`StateGraph`) com um **loop condicional de qualidade**: após a análise, um agente de decisão avalia se o conteúdo está completo o suficiente para seguir para a redação final, ou se é necessário pesquisar novamente.
 
 ```
-START → researcher → analyst → writer → END
+START → researcher → analyst → decision ─┬─(APPROVED)─────────→ writer → END
+                          ↑               │
+                          └─(RESEARCH_AGAIN, se attempts < 2)
 ```
 
 1. **Researcher (`agents/researcher.py`)**
-   Recebe a pergunta do usuário e produz uma pesquisa inicial, levantando os principais conceitos, informações relevantes e pontos que merecem aprofundamento.
+   Recebe a pergunta do usuário e produz uma pesquisa inicial, levantando os principais conceitos, informações relevantes e pontos que merecem aprofundamento. A cada execução, incrementa o contador `attempts`.
 
 2. **Analyst (`agents/analyst.py`)**
    Recebe a pesquisa produzida pelo agente anterior e faz uma análise crítica: organiza as informações por relevância, aponta limitações e sinaliza o que precisa de mais investigação.
 
-3. **Writer (`agents/writer.py`)**
+3. **Decision (`agents/decision.py`)**
+   Avalia a análise produzida e decide se ela está suficientemente completa, respondendo apenas `APPROVED` ou `RESEARCH_AGAIN`. Essa decisão é usada pelo roteador condicional (`decision_router`) do grafo para definir o próximo passo:
+   - `APPROVED` → segue para o **writer**.
+   - `RESEARCH_AGAIN` e `attempts < 2` → volta para o **researcher**, gerando uma nova pesquisa.
+   - `RESEARCH_AGAIN` com `attempts >= 2` → segue para o **writer** mesmo assim, evitando um loop infinito.
+
+4. **Writer (`agents/writer.py`)**
    Recebe a pesquisa e a análise, e produz a resposta final estruturada (introdução, principais pontos, análise e conclusão) para o usuário.
 
 O estado compartilhado entre os agentes (`AgentState`) contém:
 
-| Campo          | Descrição                                  |
-|----------------|---------------------------------------------|
-| `question`     | Pergunta original do usuário                |
-| `research`     | Saída do agente pesquisador                 |
-| `analysis`     | Saída do agente analista                    |
-| `final_answer` | Resposta final produzida pelo agente redator|
+| Campo          | Descrição                                              |
+|----------------|-----------------------------------------------------------|
+| `question`     | Pergunta original do usuário                            |
+| `research`     | Saída do agente pesquisador                             |
+| `analysis`     | Saída do agente analista                                |
+| `decision`     | Decisão do agente de decisão (`APPROVED` / `RESEARCH_AGAIN`) |
+| `attempts`     | Número de vezes que o agente pesquisador foi executado   |
+| `final_answer` | Resposta final produzida pelo agente redator             |
 
 ## 📁 Estrutura do projeto
 
@@ -35,6 +45,7 @@ multiagentes/
 ├── agents/
 │   ├── researcher.py    # Agente pesquisador
 │   ├── analyst.py       # Agente analista
+│   ├── decision.py      # Agente de decisão (loop de qualidade)
 │   └── writer.py        # Agente redator
 ├── api/
 │   └── loginapi.py      # Configuração e autenticação do LLM
@@ -116,7 +127,7 @@ base_url=URL_BASE_DA_API
 Edite a pergunta em `main.py`:
 
 ```python
-question = "Quais são as principais aplicações de Machine Learning na área ambiental?"
+question = "O que é educação híbrida?"
 ```
 
 Execute o projeto:
@@ -129,9 +140,17 @@ uv run main.py
 python main.py
 ```
 
-A resposta final produzida pelo agente redator será exibida no terminal:
+O terminal exibirá a decisão do agente de qualidade, o número de tentativas de pesquisa realizadas e a resposta final produzida pelo agente redator:
 
 ```
+===== DECISÃO =====
+
+APPROVED
+
+===== TENTATIVAS =====
+
+1
+
 ===== RESPOSTA FINAL =====
 
 <resposta gerada pelos agentes>
@@ -145,10 +164,11 @@ A resposta final produzida pelo agente redator será exibida no terminal:
 
 ## 🚀 Possíveis melhorias
 
-- [ ] Adicionar tratamento de erros e retries nas chamadas ao LLM
+- [ ] Adicionar tratamento de erros nas chamadas ao LLM
+- [ ] Tornar o limite de tentativas (`attempts >= 2`) configurável
 - [ ] Permitir que a pergunta seja informada via linha de comando ou input interativo
 - [ ] Adicionar testes automatizados para cada agente
-- [ ] Registrar logs intermediários (pesquisa e análise) em arquivo
+- [ ] Registrar logs intermediários (pesquisa, análise e decisões) em arquivo
 - [ ] Suporte a múltiplos modelos/provedores de LLM
 
 ## 📄 Licença
