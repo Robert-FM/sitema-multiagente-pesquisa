@@ -1,14 +1,20 @@
 from workflow.graph import graph
 
 
-question = "Quais são as principais aplicações de Machine Learning na área ambiental?"
+question = "O que é educação híbrida?"
 
 
 result = graph.invoke({
-    "question": question
+    "question": question,
+    "attempts": 0
 })
 
 
-print("\n===== RESPOSTA FINAL =====\n")
+print("\n===== DECISÃO =====\n")
+print(result["decision"])
 
+print("\n===== TENTATIVAS =====\n")
+print(result["attempts"])
+
+print("\n===== RESPOSTA FINAL =====\n")
 print(result["final_answer"])
